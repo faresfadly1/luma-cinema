@@ -1,30 +1,226 @@
-import {useEffect,useRef,useState} from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import type {Hall,Seat} from './geometry';
-import {eyePoint} from './geometry';
-export function CinemaPreview({hall,seat,poster}:{hall:Hall;seat:Seat;poster:string}){
-  const host=useRef<HTMLDivElement>(null); const [failed,setFailed]=useState(false); const [reset,setReset]=useState(0);
-  useEffect(()=>{
-    const el=host.current;if(!el)return;let renderer:THREE.WebGLRenderer;
-    try{renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});}catch{setFailed(true);return;}
-    setFailed(false);const scene=new THREE.Scene();scene.background=new THREE.Color('#0b1010');scene.fog=new THREE.Fog('#0b1010',18,34);
-    const width=el.clientWidth||800,height=el.clientHeight||420;renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));renderer.setSize(width,height);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;el.replaceChildren(renderer.domElement);
-    const camera=new THREE.PerspectiveCamera(58,width/height,.1,100);const eye=eyePoint(seat);camera.position.set(eye.x,eye.y,eye.z);const target=new THREE.Vector3(hall.screen.center.x,hall.screen.center.y,hall.screen.center.z);camera.lookAt(target);
-    scene.add(new THREE.AmbientLight(0x99ada9,1.5));const glow=new THREE.PointLight(0x91dfc1,12,22);glow.position.set(0,5,3);scene.add(glow);
-    const floor=new THREE.Mesh(new THREE.PlaneGeometry(24,28),new THREE.MeshBasicMaterial({color:0x18211e}));floor.rotation.x=-Math.PI/2;floor.position.set(0,-.04,10);scene.add(floor);
-    const artwork=document.createElement('canvas');artwork.width=512;artwork.height=720;const artCtx=artwork.getContext('2d')!;const gradient=artCtx.createLinearGradient(0,0,0,720);gradient.addColorStop(0,'#14272b');gradient.addColorStop(.55,'#d88964');gradient.addColorStop(1,'#11191a');artCtx.fillStyle=gradient;artCtx.fillRect(0,0,512,720);artCtx.fillStyle='#f4d5a1';artCtx.beginPath();artCtx.arc(340,270,78,0,Math.PI*2);artCtx.fill();artCtx.fillStyle='#172122';artCtx.beginPath();artCtx.moveTo(0,520);artCtx.lineTo(110,400);artCtx.lineTo(185,475);artCtx.lineTo(280,350);artCtx.lineTo(390,490);artCtx.lineTo(512,390);artCtx.lineTo(512,720);artCtx.lineTo(0,720);artCtx.fill();artCtx.fillStyle='#f5f2e8';artCtx.font='500 44px Georgia';artCtx.fillText('LUMA PICTURES',34,80);const artTexture=new THREE.CanvasTexture(artwork);artTexture.colorSpace=THREE.SRGBColorSpace;const screenMat=new THREE.MeshBasicMaterial({map:artTexture,side:THREE.DoubleSide,toneMapped:false});const image=new Image();image.onload=()=>{artCtx.drawImage(image,0,0,artwork.width,artwork.height);artTexture.needsUpdate=true;renderer.render(scene,camera);};image.src=poster;
-    const sw=hall.screen.width, sh=hall.screen.height, sc=hall.screen.center;
-    const screenRig=new THREE.Group();screenRig.position.set(sc.x,sc.y,sc.z);screenRig.rotation.y=THREE.MathUtils.degToRad(hall.screen.yawDegrees);scene.add(screenRig);const screen=new THREE.Mesh(new THREE.PlaneGeometry(sw,sh),screenMat);screen.position.z=-.25;screenRig.add(screen);
-    const frameMat=new THREE.MeshStandardMaterial({color:0x314542,emissive:0x12241f});const frameParts=[[sw+.34,.16,0,sh/2+.1],[sw+.34,.16,0,-sh/2-.1],[.16,sh,sw/2+.1,0],[.16,sh,-sw/2-.1,0]];for(const [fw,fh,fx,fy] of frameParts){const edge=new THREE.Mesh(new THREE.BoxGeometry(fw,fh,.12),frameMat);edge.position.set(fx,fy,-.13);screenRig.add(edge);}screen.position.z=sc.z-.25;
-    const mat=new THREE.MeshStandardMaterial({color:0x40584d,emissive:0x15251c,roughness:.7});const metal=new THREE.MeshStandardMaterial({color:0x85958b,metalness:.25,roughness:.4});
-    for(const row of hall.rows){for(const x of row.xPositions){const seatMesh=new THREE.Group();const base=new THREE.Mesh(new THREE.BoxGeometry(.46,.3,.48),mat);base.position.y=.18;seatMesh.add(base);const back=new THREE.Mesh(new THREE.BoxGeometry(.46,.65,.15),mat);back.position.set(0,.58,.16);seatMesh.add(back);const leg=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.25,8),metal);leg.position.set(0,.04,0);seatMesh.add(leg);seatMesh.position.set(x,row.y,row.z);scene.add(seatMesh);}}
-    const selected=new THREE.Mesh(new THREE.SphereGeometry(.16,16,12),new THREE.MeshBasicMaterial({color:'#96e5c0'}));selected.position.set(seat.position.x,.2,seat.position.z);scene.add(selected);
-    let drag=false,lastX=0,lastY=0;
-    const pointerDown=(e:PointerEvent)=>{drag=true;lastX=e.clientX;lastY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId);};const pointerMove=(e:PointerEvent)=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;const dir=new THREE.Vector3().subVectors(target,camera.position).normalize();const spherical=new THREE.Spherical().setFromVector3(dir);spherical.theta-=dx*.003;spherical.phi=Math.max(.5,Math.min(2.25,spherical.phi+dy*.003));const maxYaw=THREE.MathUtils.degToRad(35);spherical.theta=Math.max(-maxYaw,Math.min(maxYaw,spherical.theta));const next=new THREE.Vector3().setFromSpherical(spherical).multiplyScalar(10).add(camera.position);camera.lookAt(next);};const pointerUp=()=>{drag=false;};
-    renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);
-    const resize=()=>{if(!el.isConnected)return;const w=el.clientWidth,h=el.clientHeight;if(!w||!h)return;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);};const observer=new ResizeObserver(resize);observer.observe(el);renderer.render(scene,camera);
-    return()=>{observer.disconnect();renderer.domElement.removeEventListener('pointerdown',pointerDown);renderer.domElement.removeEventListener('pointermove',pointerMove);renderer.domElement.removeEventListener('pointerup',pointerUp);renderer.dispose();artTexture.dispose();image.onload=null;scene.traverse(o=>{if((o as THREE.Mesh).geometry)(o as THREE.Mesh).geometry.dispose();if((o as THREE.Mesh).material){const m=(o as THREE.Mesh).material;if(Array.isArray(m))m.forEach(v=>v.dispose());else m.dispose();}});};
-  },[hall,seat,poster,reset]);
-  if(failed)return <div className="preview-fallback"><div className="fallback-screen" style={{aspectRatio:`${hall.screen.width}/${hall.screen.height}`}}><img src={poster} alt="Movie still on screen"/></div><p>3D preview is unavailable on this device. Your selected seat measurements are still available below.</p></div>;
-  return <><div className="preview-canvas" ref={host} aria-label="Interactive view from selected seat; drag to look around"/><div className="preview-controls"><span>Drag to look around · camera remains at your seat</span><button className="quiet-button" onClick={()=>setReset(v=>v+1)}>Reset view</button></div></>;
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import type { Hall, Seat } from './geometry';
+import { eyePoint } from './geometry';
+
+export function CinemaPreview({ hall, seat, poster }: { hall: Hall; seat: Seat; poster: string }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  const [reset, setReset] = useState(0);
+
+  useEffect(() => {
+    const element = host.current;
+    if (!element) return;
+    let renderer: THREE.WebGLRenderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); }
+    catch { setFailed(true); return; }
+
+    setFailed(false);
+    const maxSeatZ = Math.max(...hall.rows.map((row) => row.z));
+    const maxSeatX = Math.max(...hall.rows.flatMap((row) => row.xPositions.map(Math.abs)));
+    const roomWidth = maxSeatX * 2 + 4;
+    const roomDepth = maxSeatZ + 8;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#080b0c');
+    scene.fog = new THREE.Fog('#080b0c', 26, roomDepth + 13);
+    const width = element.clientWidth || 900;
+    const height = element.clientHeight || 480;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.setSize(width, height);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    element.replaceChildren(renderer.domElement);
+
+    const eye = eyePoint(seat);
+    const camera = new THREE.PerspectiveCamera(58, width / height, 0.1, 110);
+    camera.position.set(eye.x, eye.y, eye.z);
+    const screenCenter = new THREE.Vector3(hall.screen.center.x, hall.screen.center.y, hall.screen.center.z);
+    camera.lookAt(screenCenter);
+
+    scene.add(new THREE.HemisphereLight(0xb9c6d0, 0x16100f, 1.0));
+    scene.add(new THREE.AmbientLight(0x887b79, 0.48));
+    const aisleGlow = new THREE.PointLight(0xffa568, 14, 24, 2);
+    aisleGlow.position.set(0, 0.4, Math.min(maxSeatZ, 12));
+    scene.add(aisleGlow);
+    const ceilingLight = new THREE.PointLight(0x887b75, 10, roomDepth + 10, 2);
+    ceilingLight.position.set(0, 5.7, maxSeatZ * 0.56);
+    scene.add(ceilingLight);
+    const screenGlow = new THREE.PointLight(0xcde4ef, 18, 18, 2);
+    screenGlow.position.set(hall.screen.center.x, hall.screen.center.y, hall.screen.center.z + 0.65);
+    scene.add(screenGlow);
+
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x111516, roughness: 0.96, metalness: 0.02 });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -0.12, roomDepth / 2 - 2);
+    floor.receiveShadow = true;
+    scene.add(floor);
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x121618, roughness: 0.92, metalness: 0.08 });
+    for (const side of [-1, 1]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6.1, roomDepth), wallMaterial);
+      wall.position.set(side * roomWidth / 2, 3.0, roomDepth / 2 - 2);
+      wall.receiveShadow = true;
+      scene.add(wall);
+      const wallRail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.04, roomDepth * 0.88), new THREE.MeshStandardMaterial({ color: 0x3d2722, emissive: 0x482114, emissiveIntensity: 0.6 }));
+      wallRail.position.set(side * (roomWidth / 2 - 0.16), 0.54, roomDepth / 2 - 2);
+      scene.add(wallRail);
+    }
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), new THREE.MeshStandardMaterial({ color: 0x101315, roughness: 1 }));
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(0, 6.2, roomDepth / 2 - 2);
+    scene.add(ceiling);
+
+    const screenWidth = hall.screen.width;
+    const screenHeight = hall.screen.height;
+    const screen = new THREE.Group();
+    screen.position.set(hall.screen.center.x, hall.screen.center.y, hall.screen.center.z);
+    screen.rotation.y = THREE.MathUtils.degToRad(hall.screen.yawDegrees);
+    scene.add(screen);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;
+    canvas.height = 700;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = '#131c20';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+      gradient.addColorStop(0, '#172831');
+      gradient.addColorStop(1, '#d38f6c');
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(screenWidth, screenHeight), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false }));
+    screenMesh.position.z = -0.08;
+    screen.add(screenMesh);
+    const screenFrameMaterial = new THREE.MeshStandardMaterial({ color: 0x29383b, emissive: 0x101c20, roughness: 0.46, metalness: 0.28 });
+    const frame = new THREE.Mesh(new RoundedBoxGeometry(screenWidth + 0.35, screenHeight + 0.28, 0.13, 2, 0.08), screenFrameMaterial);
+    frame.position.z = -0.18;
+    screen.add(frame);
+    const image = new Image();
+    image.onload = () => {
+      if (!context) return;
+      const imageRatio = image.width / image.height;
+      const frameRatio = canvas.width / canvas.height;
+      let sx = 0; let sy = 0; let sw = image.width; let sh = image.height;
+      if (imageRatio > frameRatio) { sw = image.height * frameRatio; sx = (image.width - sw) / 2; }
+      else { sh = image.width / frameRatio; sy = (image.height - sh) / 2; }
+      context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      texture.needsUpdate = true;
+      renderer.render(scene, camera);
+    };
+    image.src = poster;
+
+    const velvet = new THREE.MeshPhysicalMaterial({ color: 0x842029, roughness: 0.84, metalness: 0, clearcoat: 0.12, clearcoatRoughness: 0.82 });
+    const cushionMaterial = new THREE.MeshPhysicalMaterial({ color: 0xa52e37, roughness: 0.78, metalness: 0, clearcoat: 0.08 });
+    const seamMaterial = new THREE.MeshStandardMaterial({ color: 0x4e151b, roughness: 0.9 });
+    const chairMetal = new THREE.MeshStandardMaterial({ color: 0x343536, roughness: 0.58, metalness: 0.48 });
+    for (const row of hall.rows) {
+      for (const x of row.xPositions) {
+        const chair = new THREE.Group();
+        chair.position.set(x, row.y, row.z);
+        const back = new THREE.Mesh(new RoundedBoxGeometry(0.49, 0.75, 0.19, 4, 0.12), velvet);
+        back.position.set(0, 0.72, 0.18);
+        back.castShadow = true;
+        back.receiveShadow = true;
+        chair.add(back);
+        const cushion = new THREE.Mesh(new RoundedBoxGeometry(0.48, 0.18, 0.52, 4, 0.08), cushionMaterial);
+        cushion.position.set(0, 0.34, -0.06);
+        cushion.castShadow = true;
+        chair.add(cushion);
+        for (const side of [-1, 1]) {
+          const arm = new THREE.Mesh(new RoundedBoxGeometry(0.09, 0.22, 0.55, 3, 0.035), velvet);
+          arm.position.set(side * 0.29, 0.47, 0.02);
+          arm.castShadow = true;
+          chair.add(arm);
+          const support = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.27, 8), chairMetal);
+          support.position.set(side * 0.29, 0.19, 0.02);
+          chair.add(support);
+        }
+        const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.068, 0.22, 10), chairMetal);
+        pedestal.position.set(0, 0.12, 0.08);
+        chair.add(pedestal);
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.49, 0.012), seamMaterial);
+        seam.position.set(0, 0.73, 0.282);
+        chair.add(seam);
+        scene.add(chair);
+      }
+      const leftEdge = Math.max(...row.xPositions.filter((x) => x < 0));
+      const rightEdge = Math.min(...row.xPositions.filter((x) => x > 0));
+      const aisleCenter = (leftEdge + rightEdge) / 2;
+      for (const side of [-1, 1]) {
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), new THREE.MeshStandardMaterial({ color: 0xffbd85, emissive: 0xff8d4c, emissiveIntensity: 1.5, roughness: 0.5 }));
+        marker.position.set(aisleCenter + side * 0.36, 0.09, row.z + 0.18);
+        scene.add(marker);
+      }
+    }
+
+    const selectedMarker = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.018, 6, 24), new THREE.MeshBasicMaterial({ color: 0xa3ecc5 }));
+    selectedMarker.rotation.x = Math.PI / 2;
+    selectedMarker.position.set(seat.position.x, 0.08, seat.position.z);
+    scene.add(selectedMarker);
+
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    const pointerDown = (event: PointerEvent) => { dragging = true; lastX = event.clientX; lastY = event.clientY; renderer.domElement.setPointerCapture(event.pointerId); };
+    const pointerMove = (event: PointerEvent) => {
+      if (!dragging) return;
+      const dx = event.clientX - lastX; const dy = event.clientY - lastY;
+      lastX = event.clientX; lastY = event.clientY;
+      const direction = new THREE.Vector3().subVectors(screenCenter, camera.position).normalize();
+      const spherical = new THREE.Spherical().setFromVector3(direction);
+      spherical.theta -= dx * 0.003;
+      spherical.phi = Math.max(0.52, Math.min(2.25, spherical.phi + dy * 0.003));
+      const maxYaw = THREE.MathUtils.degToRad(35);
+      spherical.theta = Math.max(-maxYaw, Math.min(maxYaw, spherical.theta));
+      const next = new THREE.Vector3().setFromSpherical(spherical).multiplyScalar(10).add(camera.position);
+      camera.lookAt(next);
+      renderer.render(scene, camera);
+    };
+    const pointerUp = () => { dragging = false; };
+    renderer.domElement.addEventListener('pointerdown', pointerDown);
+    renderer.domElement.addEventListener('pointermove', pointerMove);
+    renderer.domElement.addEventListener('pointerup', pointerUp);
+    renderer.domElement.addEventListener('pointercancel', pointerUp);
+    const resize = () => {
+      if (!element.isConnected) return;
+      const nextWidth = element.clientWidth; const nextHeight = element.clientHeight;
+      if (!nextWidth || !nextHeight) return;
+      renderer.setSize(nextWidth, nextHeight);
+      camera.aspect = nextWidth / nextHeight;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    renderer.render(scene, camera);
+
+    return () => {
+      observer.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', pointerDown);
+      renderer.domElement.removeEventListener('pointermove', pointerMove);
+      renderer.domElement.removeEventListener('pointerup', pointerUp);
+      renderer.domElement.removeEventListener('pointercancel', pointerUp);
+      renderer.dispose();
+      texture.dispose();
+      image.onload = null;
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose());
+          else mesh.material.dispose();
+        }
+      });
+    };
+  }, [hall, seat, poster, reset]);
+
+  if (failed) return <div className="preview-fallback"><div style={{ aspectRatio: `${hall.screen.width}/${hall.screen.height}` }}><img src={poster} alt="Selected film on the cinema screen"/></div><p>3D preview is unavailable on this device. Seat geometry and measurements are still available.</p></div>;
+  return <div className="cinema-preview-shell"><div className="preview-canvas" ref={host} role="img" aria-label={`Cinema screen view from seat ${seat.row}${seat.number}`}/><div className="preview-controls"><span>VIEW FROM {seat.row}{seat.number} · Drag to look around</span><button onClick={() => setReset((value) => value + 1)}>Reset view</button></div></div>;
 }
