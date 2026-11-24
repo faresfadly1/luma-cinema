@@ -15,11 +15,16 @@ export function seatMeasurements(hall:Hall,seat:Seat) {
   const dx=center.x-eye.x, dy=center.y-eye.y, dz=center.z-eye.z;
   const distance=Math.hypot(dx,dy,dz);
   const half=hall.screen.width/2, yaw=hall.screen.yawDegrees*Math.PI/180;
-  const left={x:center.x-half*Math.cos(yaw),z:center.z+half*Math.sin(yaw)};
-  const right={x:center.x+half*Math.cos(yaw),z:center.z-half*Math.sin(yaw)};
-  const bearing=(point:{x:number;z:number})=>Math.atan2(point.x-eye.x,eye.z-point.z);
-  const screenAngle=Math.abs((bearing(right)-bearing(left))*180/Math.PI);
+  const screenRight={x:Math.cos(yaw),z:-Math.sin(yaw)};
+  const left={x:center.x-half*screenRight.x,z:center.z-half*screenRight.z};
+  const right={x:center.x+half*screenRight.x,z:center.z+half*screenRight.z};
+  const leftRay={x:left.x-eye.x,z:left.z-eye.z};
+  const rightRay={x:right.x-eye.x,z:right.z-eye.z};
+  const cross=leftRay.x*rightRay.z-leftRay.z*rightRay.x;
+  const dot=leftRay.x*rightRay.x+leftRay.z*rightRay.z;
+  const screenAngle=Math.abs(Math.atan2(cross,dot))*180/Math.PI;
+  const lateralOffset=(eye.x-center.x)*screenRight.x+(eye.z-center.z)*screenRight.z;
   const centerBearing=Math.atan2(dx,-dz)*180/Math.PI;
   const turn=centerBearing-seat.yawDegrees;
-  return {distance,screenAngle,verticalAngle:Math.atan2(dy,Math.hypot(dx,dz))*180/Math.PI,turnAngle:turn,eye};
+  return {distance,screenAngle,lateralOffset,verticalAngle:Math.atan2(dy,Math.hypot(dx,dz))*180/Math.PI,turnAngle:turn,eye};
 }

@@ -4,12 +4,13 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import type { Hall, Seat } from './geometry';
 import { eyePoint } from './geometry';
 
-export function CinemaPreview({ hall, seat, poster }: { hall: Hall; seat: Seat; poster: string }) {
+export function CinemaPreview({ hall, seat, poster, forceFallback = false }: { hall: Hall; seat: Seat; poster: string; forceFallback?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   const [reset, setReset] = useState(0);
 
   useEffect(() => {
+    if (forceFallback || failed) return;
     const element = host.current;
     if (!element) return;
     let renderer: THREE.WebGLRenderer;
@@ -199,10 +200,13 @@ export function CinemaPreview({ hall, seat, poster }: { hall: Hall; seat: Seat; 
     };
     const observer = new ResizeObserver(resize);
     observer.observe(element);
+    const onContextLost = (event: Event) => { event.preventDefault(); setFailed(true); };
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);
     renderer.render(scene, camera);
 
     return () => {
       observer.disconnect();
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost, false);
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointermove', pointerMove);
       renderer.domElement.removeEventListener('pointerup', pointerUp);
@@ -219,8 +223,81 @@ export function CinemaPreview({ hall, seat, poster }: { hall: Hall; seat: Seat; 
         }
       });
     };
-  }, [hall, seat, poster, reset]);
+  }, [hall, seat, poster, reset, failed, forceFallback]);
 
-  if (failed) return <div className="preview-fallback"><div style={{ aspectRatio: `${hall.screen.width}/${hall.screen.height}` }}><img src={poster} alt="Selected film on the cinema screen"/></div><p>3D preview is unavailable on this device. Seat geometry and measurements are still available.</p></div>;
+  if (failed || forceFallback) return <PerspectiveFallback hall={hall} seat={seat} poster={poster}/>;
   return <div className="cinema-preview-shell"><div className="preview-canvas" ref={host} role="img" aria-label={`Cinema screen view from seat ${seat.row}${seat.number}`}/><div className="preview-controls"><span>VIEW FROM {seat.row}{seat.number} · Drag to look around</span><button onClick={() => setReset((value) => value + 1)}>Reset view</button></div></div>;
+}
+
+function PerspectiveFallback({ hall, seat, poster }: { hall: Hall; seat: Seat; poster: string }) {
+  const screen = hall.screen;
+  const half = screen.width / 2;
+  const yaw = screen.yawDegrees * Math.PI / 180;
+  const axis = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+  const center = screen.center;
+  const points3d = [
+    { x: center.x - axis.x * half, y: center.y + screen.height / 2, z: center.z - axis.z * half },
+    { x: center.x + axis.x * half, y: center.y + screen.height / 2, z: center.z + axis.z * half },
+    { x: center.x + axis.x * half, y: center.y - screen.height / 2, z: center.z + axis.z * half },
+    { x: center.x - axis.x * half, y: center.y - screen.height / 2, z: center.z - axis.z * half },
+  ];
+  const eye = eyePoint(seat);
+  const forwardLength = Math.hypot(center.x - eye.x, center.y - eye.y, center.z - eye.z) || 1;
+  const forward = { x: (center.x - eye.x) / forwardLength, y: (center.y - eye.y) / forwardLength, z: (center.z - eye.z) / forwardLength };
+  const rightLength = Math.hypot(forward.z, forward.x) || 1;
+  const right = { x: -forward.z / rightLength, y: 0, z: forward.x / rightLength };
+  const up = {
+    x: right.y * forward.z - right.z * forward.y,
+    y: right.z * forward.x - right.x * forward.z,
+    z: right.x * forward.y - right.y * forward.x,
+  };
+  const fov = 58 * Math.PI / 180;
+  const aspect = 900 / 440;
+  const scale = 1 / Math.tan(fov / 2);
+  const projected = points3d.map((point) => {
+    const x = point.x - eye.x; const y = point.y - eye.y; const z = point.z - eye.z;
+    const depth = x * forward.x + y * forward.y + z * forward.z;
+    const cameraX = x * right.x + y * right.y + z * right.z;
+    const cameraY = x * up.x + y * up.y + z * up.z;
+    const safeDepth = Math.max(0.1, depth);
+    return { x: 450 + (cameraX / safeDepth) * scale * 450 / aspect, y: 220 - (cameraY / safeDepth) * scale * 440 / 2 };
+  });
+  const polygon = projected.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const expanded = projected.map((point) => {
+    const dx = point.x - 450; const dy = point.y - 220; const length = Math.hypot(dx, dy) || 1;
+    return `${(point.x + dx / length * 12).toFixed(1)},${(point.y + dy / length * 12).toFixed(1)}`;
+  }).join(' ');
+  const clipId = `screen-${hall.id}-${seat.id}`.replace(/[^a-z0-9-]/gi, '-');
+  return <div className="simplified-preview" role="img" aria-label={`Simplified preview from seat ${seat.row}${seat.number}`}>
+    <svg className="simplified-preview-scene" viewBox="0 0 900 440" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <defs>
+        <linearGradient id="room" x2="0" y2="1"><stop stopColor="#080b0d"/><stop offset=".68" stopColor="#101617"/><stop offset="1" stopColor="#191011"/></linearGradient>
+        <linearGradient id="floor" x2="0" y2="1"><stop stopColor="#181c1d"/><stop offset="1" stopColor="#050606"/></linearGradient>
+        <filter id="screen-glow" x="-40%" y="-60%" width="180%" height="220%"><feGaussianBlur stdDeviation="13"/></filter>
+        <clipPath id={clipId}><polygon points={polygon}/></clipPath>
+      </defs>
+      <rect width="900" height="440" fill="url(#room)"/>
+      <path d="M0 0H900L585 118H315Z" fill="#0b0f11" stroke="#1b2224"/>
+      <path d="M0 0L315 118V335L0 408Z" fill="#111719"/>
+      <path d="M900 0L585 118V335L900 408Z" fill="#111719"/>
+      <path d="M0 408L315 335H585L900 408V440H0Z" fill="url(#floor)"/>
+      <path d="M30 333L330 264M870 333L570 264" stroke="#b36e47" strokeOpacity=".3" strokeWidth="3"/>
+      <polygon points={expanded} fill="#10191c" stroke="#435259" strokeWidth="8"/>
+      <polygon points={polygon} fill="#d89a79" opacity=".8" filter="url(#screen-glow)"/>
+      <image href={poster} x="0" y="0" width="900" height="440" preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clipId})`}/>
+      <polygon points={polygon} fill="none" stroke="#d9e7e6" strokeOpacity=".72" strokeWidth="2"/>
+      {[0, 1, 2].map((row) => <g key={row} opacity={0.72 - row * 0.1}>
+        {Array.from({ length: 9 }, (_, index) => {
+          const x = 188 + index * 66 + row * 10;
+          const y = 366 + row * 22;
+          const w = 42 + row * 5;
+          return <g key={index} transform={`translate(${x} ${y})`}>
+            <path d={`M0 15 Q0 0 ${w / 2} 0 Q${w} 0 ${w} 15V${23 + row * 2}H0Z`} fill="#76232b" stroke="#a33840" strokeWidth="2"/>
+            <path d={`M3 ${23 + row * 2}H${w - 3}`} stroke="#d1545b" strokeWidth="4" strokeLinecap="round"/>
+          </g>;
+        })}
+      </g>)}
+    </svg>
+    <div className="simplified-preview-label">Simplified preview · {seat.row}{seat.number}</div>
+  </div>;
 }

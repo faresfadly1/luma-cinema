@@ -163,6 +163,10 @@ export default function App() {
   function selectShow(nextShow: Show) {
     setShow(nextShow); setSeatId('D7');
   }
+  function selectSeat(nextSeat: Seat) {
+    setSeatId(nextSeat.id);
+    location.hash = '#/preview';
+  }
   function goHome() { setShow(null); location.hash = '#/'; }
   function retryShowtimes() {
     if (!API) { setShowtimesStatus('ready'); return; }
@@ -276,7 +280,7 @@ export default function App() {
         const renderSeat = (candidate: Seat) => {
           const occupiedSeat = occupied.includes(candidate.id);
           const selected = seatId === candidate.id;
-          return <button key={candidate.id} aria-label={`Row ${candidate.row}, seat ${candidate.number}, ${occupiedSeat ? 'occupied' : selected ? 'selected' : 'available'}`} title={`${candidate.row}${candidate.number}`} disabled={occupiedSeat || (!!API && availabilityStatus !== 'ready')} className={`seat ${occupiedSeat ? 'occupied' : ''} ${selected ? 'selected' : ''}`} onClick={() => setSeatId(candidate.id)}><span>{candidate.number}</span></button>;
+          return <button key={candidate.id} aria-label={`Row ${candidate.row}, seat ${candidate.number}, ${occupiedSeat ? 'occupied' : selected ? 'selected' : 'available'}`} title={`${candidate.row}${candidate.number}`} disabled={occupiedSeat || (!!API && availabilityStatus !== 'ready')} className={`seat ${occupiedSeat ? 'occupied' : ''} ${selected ? 'selected' : ''}`} onClick={() => selectSeat(candidate)}><span>{candidate.number}</span></button>;
         };
         return <div className="seat-row" key={row.label}><span className="row-label">{row.label}</span><div className="seat-half">{left.map(renderSeat)}</div><span className="center-aisle" aria-hidden="true"/><div className="seat-half">{right.map(renderSeat)}</div><span className="row-label">{row.label}</span></div>;
       })}
@@ -305,17 +309,23 @@ export default function App() {
   </main>;
 
   const showtimeLabel = show ? `${dateLabel(show.date)} · ${show.time}` : 'Choose a showtime';
+  const metrics = seatMeasurements(hall, seat);
+  const lateralSide = metrics.lateralOffset < -0.005 ? 'left' : metrics.lateralOffset > 0.005 ? 'right' : 'center';
+  const forceFallback = new URLSearchParams(location.search).get('preview') === '2d';
   const previewScreen = <main className="preview-screen">
-    <button className="back-link" onClick={() => { location.hash = '#/book'; }}>← Back to seats</button>
-    <div className="preview-heading"><div><p className="eyebrow">{hall.name} · {hall.format}</p><h1>View from your seat</h1><p>See the screen from {seat.row}{seat.number} before you book.</p></div><div className="preview-seat-stamp"><span>{seat.row}{seat.number}</span><small>YOUR VIEW</small></div></div>
-    <div className="cinema-view"><CinemaPreview key={`${hall.id}-${seat.id}-${film.id}`} hall={hall} seat={seat} poster={film.image}/></div>
-    <section className="viewpoints"><div className="viewpoints-title"><h2>Compare your view</h2><span>Two seats · same auditorium</span></div><div className="viewpoint-options">
-      {getViewpointSeats(hall, seats, occupied).map((option) => { const isActive = option.id === seat.id; const data = seatMeasurements(hall, option); return <button key={option.id} className={`viewpoint-card ${isActive ? 'is-active' : ''}`} onClick={() => setSeatId(option.id)} aria-pressed={isActive}>
-        <span className="viewpoint-row">{option.row}{option.number}</span><span className="viewpoint-copy"><strong>{option.row === hall.rows[1]?.label ? 'Front-side view' : 'Central view · back row'}</strong><small>{data.distance.toFixed(1)} m to screen <i>·</i> {data.screenAngle.toFixed(0)}° view</small></span><span className="viewpoint-check">{isActive ? '✓' : '↗'}</span>
-      </button>; })}
-    </div></section>
-    <section className="preview-booking-card"><div className="preview-booking-heading"><div><p className="eyebrow">YOUR BOOKING</p><h2>{film.title}</h2></div><strong>{money(show?.price || 0)}</strong></div><div className="preview-booking-details"><span><small>SHOWTIME</small><strong>{showtimeLabel}</strong></span><span><small>SEAT</small><strong>{seat.row}{seat.number}</strong></span><span><small>AUDITORIUM</small><strong>{hall.name}</strong></span></div>
-      <button className="mint-button confirm-button" onClick={() => void confirmBooking()} disabled={!show || bookingPending || (!!API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) || occupied.includes(seatId)}>{bookingPending ? 'Confirming…' : occupied.includes(seatId) ? 'Seat occupied' : 'Confirm booking'}</button>
+    <div className="preview-heading"><div><p className="eyebrow">{hall.name} · {hall.format}</p><h1>View from your seat</h1><p>Previewing the selected seat in this auditorium.</p></div><div className="preview-seat-stamp"><span>{seat.row}{seat.number}</span><small>YOUR VIEW</small></div></div>
+    <div className="cinema-view"><CinemaPreview key={`${hall.id}-${seat.id}-${film.id}`} hall={hall} seat={seat} poster={film.image} forceFallback={forceFallback}/></div>
+    <section className="seat-preview-details" aria-label="Selected seat details">
+      <div className="seat-preview-title"><p className="eyebrow">SELECTED SEAT</p><h2>Row {seat.row}, Seat {seat.number}</h2><p>{film.title} <span>·</span> {showtimeLabel} <span>·</span> {hall.name} <span>·</span> {money(show?.price || 0)}</p></div>
+      <dl className="seat-measurements">
+        <div><dt>Distance to screen center (m)</dt><dd>{metrics.distance.toFixed(2)}</dd></div>
+        <div><dt>Horizontal screen viewing angle (°)</dt><dd>{metrics.screenAngle.toFixed(1)}°</dd></div>
+        <div><dt>Lateral offset from screen center (m, left/right)</dt><dd>{Math.abs(metrics.lateralOffset).toFixed(2)} m <span>{lateralSide}</span></dd></div>
+      </dl>
+      <div className="preview-actions">
+        <button className="change-seat-button" onClick={() => { location.hash = '#/book'; }}>Change seat</button>
+        <button className="mint-button confirm-button" onClick={() => void confirmBooking()} disabled={!show || bookingPending || (!!API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) || occupied.includes(seatId)}>{bookingPending ? 'Booking…' : occupied.includes(seatId) ? 'Seat occupied' : 'Book this seat'}</button>
+      </div>
       {API && availabilityStatus === 'error' && retryBox('availability')}
     </section>
   </main>;
@@ -325,19 +335,6 @@ export default function App() {
   const ticketScreen = ticketRoute && ticket ? <main className="ticket-screen"><button className="back-link" onClick={() => { location.hash = '#/tickets'; }}>← My tickets</button><div className="ticket-intro"><span className="ticket-success">✓</span><div><p className="eyebrow">YOU’RE ALL SET</p><h1>Your seat is waiting.</h1><p>Your Luma ticket is ready.</p></div></div><TicketCard booking={ticket}/></main> : ticketRoute ? <main className="ticket-screen"><p className="service-state" role="status">{notice || 'Checking ticket access…'}</p></main> : null;
 
   return <div className="app-shell">{nav}{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{ticketScreen || (myTicketsRoute ? ticketList : previewRoute && show ? previewScreen : route === '#/book' ? bookScreen : homeScreen)}</div>;
-}
-
-function getViewpointSeats(hall: Hall, seats: Seat[], occupied: string[]) {
-  const frontLabel = hall.rows[1]?.label || hall.rows[0]?.label;
-  const backLabel = hall.rows[hall.rows.length - 1]?.label;
-  const availableInRow = (row: string) => {
-    const rowSeats = seats.filter((seat) => seat.row === row);
-    const available = rowSeats.filter((seat) => !occupied.includes(seat.id));
-    return available.length ? available : rowSeats;
-  };
-  const front = availableInRow(frontLabel).sort((a, b) => Math.abs(b.position.x) - Math.abs(a.position.x))[0];
-  const back = availableInRow(backLabel).sort((a, b) => Math.abs(a.position.x) - Math.abs(b.position.x))[0];
-  return [front, back].filter((seat): seat is Seat => Boolean(seat));
 }
 
 function TicketCard({ booking }: { booking: Booking }) {
