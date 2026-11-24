@@ -1,0 +1,19 @@
+{
+  "name": "luma-cinema",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test:geometry": "tsx --test src/geometry.test.ts",
+    "api:dev": "tsx watch server/src/index.ts",
+    "api:build": "tsc -p server/tsconfig.json",
+    "api:start": "node server/dist/index.js",
+    "db:migrate": "tsx server/src/migrate.ts",
+    "db:seed": "tsx server/src/seed.ts"
+  },
+  "dependencies": {"cors":"^2.8.5","dotenv":"^16.4.7","express":"^4.21.2","pg":"^8.13.1","react":"^18.3.1","react-dom":"^18.3.1","three":"^0.171.0"},
+  "devDependencies": {"@types/cors":"^2.8.17","@types/express":"^5.0.0","@types/node":"^22.10.2","@types/pg":"^8.11.10","@types/react":"^18.3.12","@types/react-dom":"^18.3.1","@types/three":"^0.171.0","@vitejs/plugin-react":"^4.3.4","tsx":"^4.19.2","typescript":"~5.6.2","vite":"^6.0.5"}
+}
