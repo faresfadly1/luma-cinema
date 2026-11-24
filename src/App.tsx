@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CinemaPreview } from './CinemaPreview';
+import { CinemaPreview, type PreviewStage } from './CinemaPreview';
 import { getSeats, halls, seatMeasurements, type Hall, type Seat } from './geometry';
 
 type Film = {
@@ -67,7 +67,9 @@ export default function App() {
   const [route, setRoute] = useState(location.hash || '#/');
   const [movieId, setMovieId] = useState('distant-sun');
   const [show, setShow] = useState<Show | null>(null);
-  const [seatId, setSeatId] = useState('D7');
+  const [seatId, setSeatId] = useState('');
+  const [previewStage, setPreviewStage] = useState<PreviewStage>('map');
+  const [previewReady, setPreviewReady] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>(readBookings());
   const [ticket, setTicket] = useState<Booking | null>(null);
   const [notice, setNotice] = useState('');
@@ -82,15 +84,21 @@ export default function App() {
   const previewRoute = route === '#/preview';
   const hall = (show ? halls[show.hallId] : halls.standard) as Hall;
   const seats = useMemo(() => getSeats(hall), [hall]);
-  const seat = seats.find((candidate) => candidate.id === seatId) || seats[Math.floor(seats.length / 2)]!;
+  const selectedSeat = seats.find((candidate) => candidate.id === seatId);
+  const seat = selectedSeat || seats[Math.floor(seats.length / 2)]!;
+  const hasSeatSelection = !!selectedSeat;
   const film = filmFor(movieId);
   const currentShows = API ? serverShows.filter((candidate) => candidate.movieId === movieId) : demoShows[movieId];
 
   useEffect(() => {
-    const onHashChange = () => setRoute(location.hash || '#/');
+    const onHashChange = () => {
+      const nextRoute = location.hash || '#/';
+      setRoute(nextRoute);
+      if (nextRoute === '#/book' && previewStage === 'seated') setPreviewStage('returning');
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [previewStage]);
 
   useEffect(() => { localStorage.setItem(storageKey, JSON.stringify(bookings)); }, [bookings]);
 
@@ -158,14 +166,26 @@ export default function App() {
   }, [route]);
 
   function chooseFilm(id: string) {
-    setMovieId(id); setShow(null); setSeatId('D7'); location.hash = '#/book';
+    setMovieId(id); setShow(null); setSeatId(''); setPreviewStage('map'); setPreviewReady(false); location.hash = '#/book';
   }
   function selectShow(nextShow: Show) {
-    setShow(nextShow); setSeatId('D7');
+    setShow(nextShow); setSeatId(''); setPreviewStage('map'); setPreviewReady(false); location.hash = '#/book';
   }
   function selectSeat(nextSeat: Seat) {
     setSeatId(nextSeat.id);
+  }
+  function continueToPreview() {
+    if (!show || !hasSeatSelection || !previewReady || occupied.includes(seatId) || (!!API && availabilityStatus !== 'ready')) return;
+    setPreviewStage('moving');
     location.hash = '#/preview';
+  }
+  function completePreviewStage(next: 'seated' | 'map') {
+    if (next === 'seated') setPreviewStage('seated');
+    else { setPreviewStage('map'); location.hash = '#/book'; }
+  }
+  function changeSeat() {
+    if (previewStage === 'seated') setPreviewStage('returning');
+    else { setPreviewStage('map'); location.hash = '#/book'; }
   }
   function goHome() { setShow(null); location.hash = '#/'; }
   function retryShowtimes() {
@@ -184,7 +204,7 @@ export default function App() {
   }
 
   async function confirmBooking() {
-    if (!show || bookingPending) return;
+    if (!show || !hasSeatSelection || bookingPending) return;
     if (API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) { setNotice('Wait for the server to confirm availability before booking.'); return; }
     if (occupied.includes(seatId)) { setNotice('That seat is occupied. Please choose another seat.'); return; }
     setBookingPending(true);
@@ -270,7 +290,12 @@ export default function App() {
     {!API && currentShows.length === 0 && <p className="empty-shows">No showtimes are listed for this film.</p>}
   </div>;
 
-  const seatMap = <div className="seat-map-wrap">
+  const showtimeLabel = show ? `${dateLabel(show.date)} · ${show.time}` : 'Choose a showtime';
+  const metrics = seatMeasurements(hall, seat);
+  const lateralSide = metrics.lateralOffset < -0.005 ? 'left' : metrics.lateralOffset > 0.005 ? 'right' : 'center';
+  const seatMap = <div className={`seat-map-wrap seat-map-stage ${previewStage === 'moving' ? 'is-moving' : ''} ${previewStage === 'returning' ? 'is-returning' : ''} ${previewStage === 'seated' ? 'is-seated' : ''}`}>
+    <CinemaPreview hall={hall} seat={seat} poster={film.image} hasSelection={hasSeatSelection} stage={previewStage} onStageComplete={completePreviewStage} onReadyChange={setPreviewReady} forceFallback={new URLSearchParams(location.search).get('preview') === '2d'}/>
+    <div className={`map-select-ui ${previewStage !== 'map' && previewStage !== 'returning' ? 'is-hidden' : ''}`}>
     <div className="screen-arc"><span>SCREEN</span></div>
     <div className={`seat-map ${hall.id}`} aria-label={`${hall.name} seat map`}>
       {hall.rows.map((row) => {
@@ -279,62 +304,54 @@ export default function App() {
         const right = rowSeats.filter((candidate) => candidate.position.x > 0);
         const renderSeat = (candidate: Seat) => {
           const occupiedSeat = occupied.includes(candidate.id);
-          const selected = seatId === candidate.id;
-          return <button key={candidate.id} aria-label={`Row ${candidate.row}, seat ${candidate.number}, ${occupiedSeat ? 'occupied' : selected ? 'selected' : 'available'}`} title={`${candidate.row}${candidate.number}`} disabled={occupiedSeat || (!!API && availabilityStatus !== 'ready')} className={`seat ${occupiedSeat ? 'occupied' : ''} ${selected ? 'selected' : ''}`} onClick={() => selectSeat(candidate)}><span>{candidate.number}</span></button>;
+          const selected = hasSeatSelection && seatId === candidate.id;
+          return <button key={candidate.id} aria-label={`Row ${candidate.row}, seat ${candidate.number}, ${occupiedSeat ? 'occupied' : selected ? 'selected' : 'available'}`} title={`${candidate.row}${candidate.number}`} disabled={occupiedSeat || (!!API && availabilityStatus !== 'ready') || previewStage !== 'map'} className={`seat ${occupiedSeat ? 'occupied' : ''} ${selected ? 'selected' : ''}`} onClick={() => selectSeat(candidate)}><span>{candidate.number}</span></button>;
         };
         return <div className="seat-row" key={row.label}><span className="row-label">{row.label}</span><div className="seat-half">{left.map(renderSeat)}</div><span className="center-aisle" aria-hidden="true"/><div className="seat-half">{right.map(renderSeat)}</div><span className="row-label">{row.label}</span></div>;
       })}
     </div>
     <div className="seat-legend"><span><i className="legend-seat free"/>Available</span><span><i className="legend-seat taken"/>Occupied</span><span><i className="legend-seat picked"/>Selected</span></div>
+    <div className="map-continue-row"><span>{hasSeatSelection ? `Row ${seat.row} · Seat ${seat.number}` : 'Choose an available seat'}</span><button className="mint-button continue-button" onClick={continueToPreview} disabled={!hasSeatSelection || !previewReady || (!!API && availabilityStatus !== 'ready') || occupied.includes(seatId)}>{occupied.includes(seatId) ? 'Seat occupied' : 'Continue'}</button></div>
+    </div>
+    {previewStage === 'seated' && <section className="seat-preview-details" aria-label="Selected seat details">
+      <div className="seat-preview-title"><p className="eyebrow">YOUR VIEW · {hall.format.toUpperCase()}</p><h2>Row {seat.row}, Seat {seat.number}</h2><p>{film.title} <span>·</span> {showtimeLabel} <span>·</span> {hall.name}</p></div>
+      <dl className="seat-measurements">
+        <div><dt>Distance to screen center</dt><dd>{metrics.distance.toFixed(1)} m</dd></div>
+        <div><dt>Horizontal viewing angle</dt><dd>{metrics.screenAngle.toFixed(0)}°</dd></div>
+        <div><dt>Lateral offset</dt><dd>{Math.abs(metrics.lateralOffset).toFixed(1)} m <span>{lateralSide}</span></dd></div>
+      </dl>
+      <div className="preview-actions">
+        <button className="change-seat-button" onClick={changeSeat}>Change seat</button>
+        <button className="mint-button confirm-button" onClick={() => void confirmBooking()} disabled={!show || bookingPending || (!!API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) || occupied.includes(seatId)}>{bookingPending ? 'Booking…' : occupied.includes(seatId) ? 'Seat occupied' : `Book · ${money(show?.price || 0)}`}</button>
+      </div>
+      {API && availabilityStatus === 'error' && retryBox('availability')}
+    </section>}
   </div>;
 
   const bookingDetails = show ? <>
     <div className="summary-film"><img src={film.image} alt=""/><div><strong>{film.title}</strong><small>{film.genre}</small></div></div>
-    <dl className="summary-details"><div><dt>Showtime</dt><dd>{dateLabel(show.date)} · {show.time}</dd></div><div><dt>Auditorium</dt><dd>{hall.name}</dd></div><div><dt>Seat</dt><dd className="summary-seat-label">{seat.row}{seat.number}</dd></div></dl>
+    <dl className="summary-details"><div><dt>Showtime</dt><dd>{dateLabel(show.date)} · {show.time}</dd></div><div><dt>Auditorium</dt><dd>{hall.name}</dd></div><div><dt>Seat</dt><dd className="summary-seat-label">{hasSeatSelection ? `${seat.row}${seat.number}` : 'Choose a seat'}</dd></div></dl>
     <div className="summary-total"><span>Total · 1 ticket</span><strong>{money(show.price)}</strong></div>
-    <button className="text-action" onClick={() => { location.hash = '#/preview'; }}>View from seat <span>↗</span></button>
-    <button className="mint-button confirm-button" onClick={() => void confirmBooking()} disabled={bookingPending || (!!API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) || occupied.includes(seatId)}>{bookingPending ? 'Confirming…' : occupied.includes(seatId) ? 'Seat occupied' : 'Confirm booking'}</button>
+    <p className="map-continue-hint">{hasSeatSelection ? 'Continue to see your seat from the hall.' : 'Select an available seat to continue.'}</p>
     {API && availabilityStatus === 'error' && <p className="booking-hint">Reconnect to the cinema server to continue.</p>}
   </> : <div className="summary-empty"><span className="summary-ticket">▱</span><p>Choose a showtime to see your booking details.</p></div>;
 
-  const bookScreen = <main className="booking-screen">
+  const bookScreen = <main className={`booking-screen ${previewStage === 'seated' ? 'is-seated' : ''} ${previewStage === 'moving' || previewStage === 'returning' ? 'is-traveling' : ''}`}>
     <div className="booking-topline"><button className="back-link" onClick={goHome}>← Films</button><p className="eyebrow">YOUR NIGHT AT LUMA</p></div>
     <div className="booking-columns">
       <aside className="film-column"><div className="selected-film-art"><img src={film.image} alt={`${film.title} cinematic still`}/><span>{film.rating} <i>·</i> {film.runtime}</span></div><div className="selected-film-title"><p className="eyebrow">NOW SHOWING</p><h1>{film.title}</h1><p>{film.description}</p></div><div className="showtime-picker"><div className="mini-heading"><h2>Choose a showtime</h2><span>TRT · UTC+3</span></div>{showtimeList}</div></aside>
-      <section className="seats-column"><div className="seat-column-heading"><div><p className="eyebrow">{show ? `${hall.name} · ${hall.format}` : 'CHOOSE YOUR VIEW'}</p><h2>{show ? 'Choose your seat' : 'Find your seat'}</h2></div>{show && <span className="seat-count">{occupied.length} SEATS TAKEN</span>}</div>
+      <section className="seats-column"><div className="seat-column-heading"><div><p className="eyebrow">{show ? `${hall.name} · ${hall.format}` : 'CHOOSE YOUR VIEW'}</p><h2>{show ? previewStage === 'seated' ? `Your view · ${seat.row}${seat.number}` : 'Choose your seat' : 'Find your seat'}</h2></div>{show && previewStage === 'map' && <span className="seat-count">{occupied.length} SEATS TAKEN</span>}</div>
         {show ? <>{API && availabilityStatus !== 'ready' && retryBox('availability')}{seatMap}<p className="seat-note">Row A is closest to the screen <span>·</span> Select any available seat</p></> : <div className="map-placeholder"><div className="placeholder-arc"/><span>Select a showtime to open the seat map</span></div>}
       </section>
       <aside className="booking-aside"><div className="aside-heading"><p className="eyebrow">LUMA CINEMA · ANKARA</p><h2>Your booking</h2></div>{bookingDetails}<p className="secure-note">No payment is collected in this demo.</p></aside>
     </div>
   </main>;
 
-  const showtimeLabel = show ? `${dateLabel(show.date)} · ${show.time}` : 'Choose a showtime';
-  const metrics = seatMeasurements(hall, seat);
-  const lateralSide = metrics.lateralOffset < -0.005 ? 'left' : metrics.lateralOffset > 0.005 ? 'right' : 'center';
-  const forceFallback = new URLSearchParams(location.search).get('preview') === '2d';
-  const previewScreen = <main className="preview-screen">
-    <div className="preview-heading"><div><p className="eyebrow">{hall.name} · {hall.format}</p><h1>View from your seat</h1><p>Previewing the selected seat in this auditorium.</p></div><div className="preview-seat-stamp"><span>{seat.row}{seat.number}</span><small>YOUR VIEW</small></div></div>
-    <div className="cinema-view"><CinemaPreview key={`${hall.id}-${seat.id}-${film.id}`} hall={hall} seat={seat} poster={film.image} forceFallback={forceFallback}/></div>
-    <section className="seat-preview-details" aria-label="Selected seat details">
-      <div className="seat-preview-title"><p className="eyebrow">SELECTED SEAT</p><h2>Row {seat.row}, Seat {seat.number}</h2><p>{film.title} <span>·</span> {showtimeLabel} <span>·</span> {hall.name} <span>·</span> {money(show?.price || 0)}</p></div>
-      <dl className="seat-measurements">
-        <div><dt>Distance to screen center (m)</dt><dd>{metrics.distance.toFixed(2)}</dd></div>
-        <div><dt>Horizontal screen viewing angle (°)</dt><dd>{metrics.screenAngle.toFixed(1)}°</dd></div>
-        <div><dt>Lateral offset from screen center (m, left/right)</dt><dd>{Math.abs(metrics.lateralOffset).toFixed(2)} m <span>{lateralSide}</span></dd></div>
-      </dl>
-      <div className="preview-actions">
-        <button className="change-seat-button" onClick={() => { location.hash = '#/book'; }}>Change seat</button>
-        <button className="mint-button confirm-button" onClick={() => void confirmBooking()} disabled={!show || bookingPending || (!!API && (showtimesStatus !== 'ready' || availabilityStatus !== 'ready')) || occupied.includes(seatId)}>{bookingPending ? 'Booking…' : occupied.includes(seatId) ? 'Seat occupied' : 'Book this seat'}</button>
-      </div>
-      {API && availabilityStatus === 'error' && retryBox('availability')}
-    </section>
-  </main>;
-
   const ticketList = <main className="tickets-screen"><div className="page-title"><p className="eyebrow">YOUR CINEMA PLANS</p><h1>My tickets</h1><p>Every story starts with a seat.</p></div>{bookings.length === 0 ? <div className="empty-tickets"><span>▱</span><h2>No tickets yet</h2><p>Pick a film and find your view.</p><button className="mint-button" onClick={goHome}>Explore films</button></div> : <div className="ticket-list">{bookings.map((booking) => <button className="ticket-row" key={booking.id} onClick={() => void openTicket(booking)}><img src={filmFor(booking.movieId).image} alt=""/><span><strong>{filmFor(booking.movieId).title}</strong><small>{dateLabel(booking.show.date)} · {booking.show.time} · Seat {booking.seatId}</small></span><b>{money(booking.show.price)}</b><i>↗</i></button>)}</div>}</main>;
 
   const ticketScreen = ticketRoute && ticket ? <main className="ticket-screen"><button className="back-link" onClick={() => { location.hash = '#/tickets'; }}>← My tickets</button><div className="ticket-intro"><span className="ticket-success">✓</span><div><p className="eyebrow">YOU’RE ALL SET</p><h1>Your seat is waiting.</h1><p>Your Luma ticket is ready.</p></div></div><TicketCard booking={ticket}/></main> : ticketRoute ? <main className="ticket-screen"><p className="service-state" role="status">{notice || 'Checking ticket access…'}</p></main> : null;
 
-  return <div className="app-shell">{nav}{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{ticketScreen || (myTicketsRoute ? ticketList : previewRoute && show ? previewScreen : route === '#/book' ? bookScreen : homeScreen)}</div>;
+  return <div className="app-shell">{nav}{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{ticketScreen || (myTicketsRoute ? ticketList : (route === '#/book' || previewRoute) && show ? bookScreen : route === '#/book' ? bookScreen : homeScreen)}</div>;
 }
 
 function TicketCard({ booking }: { booking: Booking }) {
