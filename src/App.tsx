@@ -1,52 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CinemaPreview, type PreviewStage } from './CinemaPreview';
 import { getSeats, halls, seatMeasurements, type Hall, type Seat } from './geometry';
+import { cinemaFilms } from './films';
 
 type Film = {
   id: string;
   title: string;
+  englishTitle?: string;
   genre: string;
   runtime: string;
-  rating: string;
+  score?: string;
   image: string;
-  description: string;
+  showtimes: string[];
 };
 type Show = { id: string; movieId?: string; date: string; time: string; hallId: string; price: number };
 type Booking = { id: string; token: string; movieId: string; show: Show; seatId: string; createdAt: string };
 
 const asset = (name: string) => `${import.meta.env.BASE_URL}images/${name}`;
-const films: Film[] = [
-  { id: 'distant-sun', title: 'Distant Sun', genre: 'Sci-fi · Drama', runtime: '2h 08m', rating: 'PG-13', image: asset('distant-sun.webp'), description: 'A cartographer on a quiet moon finds a signal that seems to know the shape of her memories.' },
-  { id: 'night-ferry', title: 'Night Ferry', genre: 'Mystery · Thriller', runtime: '1h 52m', rating: 'PG-13', image: asset('night-ferry.webp'), description: 'The last crossing carries six strangers, one missing passenger, and a secret none of them can leave ashore.' },
-  { id: 'blue-hour', title: 'Blue Hour', genre: 'Romance · Drama', runtime: '1h 46m', rating: 'PG', image: asset('blue-hour.webp'), description: 'Two people return to the seaside town where their paths first crossed, with one small chance to begin again.' },
-];
+const films: Film[] = cinemaFilms.map(({ poster, ...film }) => ({ ...film, image: asset(`films/${poster}`) }));
 const API = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '');
 const storageKey = 'luma-bookings-v1';
 const tokenKey = 'luma-visitor-token';
-
-function localDate(offset: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(date);
-}
-const demoShows: Record<string, Show[]> = {
-  'distant-sun': [
-    { id: 'ds-std-1930', date: localDate(1), time: '19:30', hallId: 'standard', price: 240 },
-    { id: 'ds-imax-2100', date: localDate(1), time: '21:00', hallId: 'imax', price: 340 },
-    { id: 'ds-std-1615', date: localDate(2), time: '16:15', hallId: 'standard', price: 240 },
-    { id: 'ds-imax-1830', date: localDate(3), time: '18:30', hallId: 'imax', price: 340 },
-  ],
-  'night-ferry': [
-    { id: 'nf-std-1745', date: localDate(1), time: '17:45', hallId: 'standard', price: 220 },
-    { id: 'nf-std-2015', date: localDate(2), time: '20:15', hallId: 'standard', price: 220 },
-    { id: 'nf-imax-1900', date: localDate(4), time: '19:00', hallId: 'imax', price: 320 },
-  ],
-  'blue-hour': [
-    { id: 'bh-std-1530', date: localDate(1), time: '15:30', hallId: 'standard', price: 210 },
-    { id: 'bh-std-1815', date: localDate(3), time: '18:15', hallId: 'standard', price: 210 },
-    { id: 'bh-imax-2045', date: localDate(4), time: '20:45', hallId: 'imax', price: 310 },
-  ],
-};
+const sourceScheduleDate = '2026-11-26';
+const demoShows: Record<string, Show[]> = Object.fromEntries(films.map((film) => [film.id, film.showtimes.map((time) => ({
+  id: `${film.id}-20261126-${time.replace(':', '')}`,
+  movieId: film.id,
+  date: sourceScheduleDate,
+  time,
+  hallId: 'standard',
+  price: 240,
+}))]));
 
 function token() {
   let value = localStorage.getItem(tokenKey);
@@ -65,7 +48,7 @@ function dateLabel(value: string) {
 function filmFor(id: string) { return films.find((film) => film.id === id) || films[0]; }
 export default function App() {
   const [route, setRoute] = useState(location.hash || '#/');
-  const [movieId, setMovieId] = useState('distant-sun');
+  const [movieId, setMovieId] = useState(films[0]!.id);
   const [show, setShow] = useState<Show | null>(null);
   const [seatId, setSeatId] = useState('');
   const [previewStage, setPreviewStage] = useState<PreviewStage>('map');
@@ -88,6 +71,7 @@ export default function App() {
   const seat = selectedSeat || seats[Math.floor(seats.length / 2)]!;
   const hasSeatSelection = !!selectedSeat;
   const film = filmFor(movieId);
+  const featuredFilm = films[0]!;
   const currentShows = API ? serverShows.filter((candidate) => candidate.movieId === movieId) : demoShows[movieId];
 
   useEffect(() => {
@@ -261,14 +245,14 @@ export default function App() {
   </header>;
 
   const homeScreen = <main className="home-screen">
-    <section className="hero" style={{ backgroundImage: `linear-gradient(90deg,rgba(6,9,11,.88) 0%,rgba(6,9,11,.57) 34%,rgba(6,9,11,.08) 72%),url("${films[0].image}")` }}>
-      <div className="hero-copy"><p className="eyebrow"><span className="live-dot"/>NOW SHOWING IN ANKARA</p><h1>Distant<br/><em>Sun</em></h1><p className="hero-description">A cartographer on a quiet moon finds a signal that seems to know the shape of her memories.</p><div className="hero-meta">SCI-FI · DRAMA <span/> 2H 08M <span/> PG-13</div><button className="mint-button hero-button" onClick={() => chooseFilm('distant-sun')}>Book tickets <span aria-hidden="true">↗</span></button></div>
-      <div className="hero-caption">A NEW FILM BY LUMA PICTURES <span>01 / 03</span></div>
+    <section className="hero" style={{ backgroundImage: `linear-gradient(90deg,rgba(6,9,11,.92) 0%,rgba(6,9,11,.72) 40%,rgba(6,9,11,.15) 100%),url("${featuredFilm.image}")` }}>
+      <div className="hero-copy"><p className="eyebrow"><span className="live-dot"/>NOW SHOWING IN ANKARA</p><h1>{featuredFilm.title}</h1><p className="hero-description">{featuredFilm.englishTitle || `${featuredFilm.genre} · ${featuredFilm.runtime}`}</p><div className="hero-meta">{featuredFilm.genre.toUpperCase()} <span/> {featuredFilm.runtime.toUpperCase()} {featuredFilm.score && <><span/> RATING {featuredFilm.score}</>}</div><button className="mint-button hero-button" onClick={() => chooseFilm(featuredFilm.id)}>Book tickets <span aria-hidden="true">↗</span></button></div>
+      <div className="hero-caption">PARIBU CINEVERSE · ANKAMALL <span>01 / {String(films.length).padStart(2, '0')}</span></div>
     </section>
     <section className="now-showing" id="now-showing">
-      <div className="section-title"><div><p className="eyebrow">THREE STORIES. ONE BIG SCREEN.</p><h2>Now showing <span>in Ankara</span></h2></div><span className="showing-count">03 FILMS</span></div>
+      <div className="section-title"><div><p className="eyebrow">PARIBU CINEVERSE · ANKAMALL · 26 NOVEMBER 2026</p><h2>Now showing <span>in Ankara</span></h2></div><span className="showing-count">{String(films.length).padStart(2, '0')} FILMS</span></div>
       <div className="film-grid">{films.map((item, index) => <button className={`film-card film-card-${index + 1}`} key={item.id} onClick={() => chooseFilm(item.id)} aria-label={`Book tickets for ${item.title}`}>
-        <img src={item.image} alt="" loading="lazy"/><span className="card-shade"/><span className="film-index">0{index + 1}</span><span className="film-card-copy"><strong>{item.title}</strong><small>{item.genre} <i>·</i> {item.runtime}</small></span><span className="film-arrow" aria-hidden="true">↗</span>
+        <img src={item.image} alt={`${item.title} poster`} loading="lazy"/><span className="card-shade"/><span className="film-index">{String(index + 1).padStart(2, '0')}</span><span className="film-card-copy"><strong>{item.title}</strong><small>{item.genre} <i>·</i> {item.runtime}{item.score && <> <i>·</i> {item.score}</>}</small></span><span className="film-arrow" aria-hidden="true">↗</span>
       </button>)}</div>
     </section>
     <footer className="site-footer"><span>LUMA CINEMA</span><span>ANKARA · TÜRKİYE</span><button onClick={() => { location.hash = '#/tickets'; }}>My tickets</button></footer>
@@ -339,7 +323,7 @@ export default function App() {
   const bookScreen = <main className={`booking-screen ${previewStage === 'seated' ? 'is-seated' : ''} ${previewStage === 'moving' || previewStage === 'returning' ? 'is-traveling' : ''}`}>
     <div className="booking-topline"><button className="back-link" onClick={goHome}>← Films</button><p className="eyebrow">YOUR NIGHT AT LUMA</p></div>
     <div className="booking-columns">
-      <aside className="film-column"><div className="selected-film-art"><img src={film.image} alt={`${film.title} cinematic still`}/><span>{film.rating} <i>·</i> {film.runtime}</span></div><div className="selected-film-title"><p className="eyebrow">NOW SHOWING</p><h1>{film.title}</h1><p>{film.description}</p></div><div className="showtime-picker"><div className="mini-heading"><h2>Choose a showtime</h2><span>TRT · UTC+3</span></div>{showtimeList}</div></aside>
+      <aside className="film-column"><div className="selected-film-art"><img src={film.image} alt={`${film.title} official poster`}/><span>{film.score ? `RATING ${film.score}` : 'RATING NOT LISTED'} <i>·</i> {film.runtime}</span></div><div className="selected-film-title"><p className="eyebrow">NOW SHOWING · ANKAMALL</p><h1>{film.title}</h1><p>{film.englishTitle || film.genre}</p></div><div className="showtime-picker"><div className="mini-heading"><h2>Choose a showtime</h2><span>26 NOV · TRT</span></div>{showtimeList}</div></aside>
       <section className="seats-column"><div className="seat-column-heading"><div><p className="eyebrow">{show ? `${hall.name} · ${hall.format}` : 'CHOOSE YOUR VIEW'}</p><h2>{show ? previewStage === 'seated' ? `Your view · ${seat.row}${seat.number}` : 'Choose your seat' : 'Find your seat'}</h2></div>{show && previewStage === 'map' && <span className="seat-count">{occupied.length} SEATS TAKEN</span>}</div>
         {show ? <>{API && availabilityStatus !== 'ready' && retryBox('availability')}{seatMap}<p className="seat-note">Row A is closest to the screen <span>·</span> Select any available seat</p></> : <div className="map-placeholder"><div className="placeholder-arc"/><span>Select a showtime to open the seat map</span></div>}
       </section>
