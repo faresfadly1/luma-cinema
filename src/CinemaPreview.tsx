@@ -34,6 +34,7 @@ type SceneState = {
   selectedBack: THREE.Material;
   selectedCushion: THREE.Material;
   texture: THREE.CanvasTexture;
+  fabricTexture: THREE.CanvasTexture;
   canvas: HTMLCanvasElement;
   currentTarget: THREE.Vector3;
   currentUp: THREE.Vector3;
@@ -42,9 +43,42 @@ type SceneState = {
   alive: boolean;
 };
 
-const FOV = 58;
+const FOV = 90;
 const FLIGHT_MS = 1320;
 const RETURN_MS = 1080;
+
+function createVelvetTexture(renderer: THREE.WebGLRenderer) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) return new THREE.CanvasTexture(canvas);
+  const image = context.createImageData(canvas.width, canvas.height);
+  let seed = 0x5eeda11;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      seed = (Math.imul(seed ^ (seed >>> 15), 1 | seed) + 0x6d2b79f5) | 0;
+      let noise = seed;
+      noise = Math.imul(noise ^ (noise >>> 7), 61 | noise);
+      noise ^= noise + Math.imul(noise ^ (noise >>> 14), 9 | noise);
+      const grain = ((noise ^ (noise >>> 13)) & 15) - 7;
+      const weave = (x % 4 === 0 || y % 4 === 0) ? -3 : 0;
+      const shade = grain + weave + Math.sin((x + y * 0.7) * 0.12) * 2.2;
+      const index = (y * canvas.width + x) * 4;
+      image.data[index] = Math.max(0, Math.min(255, 93 + shade));
+      image.data[index + 1] = Math.max(0, Math.min(255, 21 + shade * 0.42));
+      image.data[index + 2] = Math.max(0, Math.min(255, 28 + shade * 0.55));
+      image.data[index + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
 
 export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStageComplete, onReadyChange, forceFallback = false }: PreviewProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -85,7 +119,7 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     renderer.setSize(width, height);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     element.replaceChildren(renderer.domElement);
@@ -106,17 +140,14 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     camera.position.copy(mapPosition);
     camera.lookAt(mapTarget);
 
-    scene.add(new THREE.HemisphereLight(0x9aa9b6, 0x090909, 0.58));
-    scene.add(new THREE.AmbientLight(0x51464a, 0.46));
-    const aisleLight = new THREE.PointLight(0xff8b54, 9, 21, 2);
-    aisleLight.position.set(0, 0.7, maxDepth * 0.58);
-    scene.add(aisleLight);
-    const rearLight = new THREE.PointLight(0x7f4a44, 5, 18, 2);
-    rearLight.position.set(0, 3.7, maxDepth + 3);
-    scene.add(rearLight);
-    const screenGlow = new THREE.PointLight(0xe3ddd0, 18, 15, 2);
-    screenGlow.position.set(hall.screen.center.x, hall.screen.center.y, hall.screen.center.z + 0.5);
+    scene.add(new THREE.HemisphereLight(0xc4b6a6, 0x080607, 0.28));
+    scene.add(new THREE.AmbientLight(0x4b3830, 0.25));
+    const screenGlow = new THREE.PointLight(0xffd9b4, 25, 22, 2);
+    screenGlow.position.set(hall.screen.center.x, hall.screen.center.y + 0.35, hall.screen.center.z + 1.25);
     scene.add(screenGlow);
+    const aisleLight = new THREE.PointLight(0xff9057, 3.2, 18, 2);
+    aisleLight.position.set(0, 0.55, maxDepth * 0.62);
+    scene.add(aisleLight);
 
     const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x0b0d0e, roughness: 0.96, metalness: 0.02 });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth + 2), floorMaterial);
@@ -124,20 +155,81 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     floor.position.set(0, -0.17, roomDepth / 2 - 2);
     floor.receiveShadow = true;
     scene.add(floor);
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x0d1012, roughness: 0.94, metalness: 0.04 });
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x100d0c, roughness: 0.94, metalness: 0.02 });
+    const woodMaterials = [
+      new THREE.MeshStandardMaterial({ color: 0x241710, roughness: 0.88, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: 0x1b120f, roughness: 0.92, metalness: 0.01 }),
+    ];
+    const woodTrim = new THREE.MeshStandardMaterial({ color: 0x382319, roughness: 0.8, metalness: 0.04 });
+    const sconceFrame = new THREE.MeshStandardMaterial({ color: 0x241913, roughness: 0.52, metalness: 0.3 });
+    const sconceGlow = new THREE.MeshBasicMaterial({ color: 0xffb36f, toneMapped: false });
     for (const side of [-1, 1]) {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(0.24, 6.5, roomDepth), wallMaterial);
       wall.position.set(side * roomWidth / 2, 3.05, roomDepth / 2 - 2);
       wall.receiveShadow = true;
       scene.add(wall);
-      const wallRail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.055, roomDepth * 0.86), new THREE.MeshStandardMaterial({ color: 0x35201c, emissive: 0x4b1d16, emissiveIntensity: 0.32 }));
-      wallRail.position.set(side * (roomWidth / 2 - 0.17), 0.4, roomDepth / 2 - 2);
+      const wallInsideX = side * (roomWidth / 2 - 0.118);
+      const panelStep = 1.55;
+      const panelStart = roomDepth / 2 - 2 - roomDepth / 2 + panelStep / 2;
+      for (let index = 0; panelStart + index * panelStep < roomDepth - 2; index += 1) {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.035, 5.7, panelStep - 0.08), woodMaterials[index % woodMaterials.length]);
+        panel.position.set(wallInsideX, 3.05, panelStart + index * panelStep);
+        scene.add(panel);
+        const upright = new THREE.Mesh(new THREE.BoxGeometry(0.075, 6.05, 0.045), woodTrim);
+        upright.position.set(wallInsideX - side * 0.035, 3.05, panelStart + index * panelStep + panelStep / 2 - 0.02);
+        scene.add(upright);
+      }
+      const wallRail = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.05, roomDepth * 0.86), new THREE.MeshStandardMaterial({ color: 0x44291d, emissive: 0x562315, emissiveIntensity: 0.12, roughness: 0.78 }));
+      wallRail.position.set(side * (roomWidth / 2 - 0.17), 0.42, roomDepth / 2 - 2);
       scene.add(wallRail);
+      for (const z of [0.8, 3, maxDepth * 0.52, maxDepth + 1.2]) {
+        const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.82, 0.4), sconceFrame);
+        fixture.position.set(side * (roomWidth / 2 - 0.22), 3.18, z);
+        scene.add(fixture);
+        const diffuser = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.59, 0.18), sconceGlow);
+        diffuser.position.set(side * (roomWidth / 2 - 0.285), 3.18, z);
+        scene.add(diffuser);
+        if (z === 3 || z === maxDepth * 0.52) {
+          const sconceLight = new THREE.PointLight(0xff9b5d, 4.1, 5.7, 2);
+          sconceLight.position.set(side * (roomWidth / 2 - 0.7), 3.15, z);
+          scene.add(sconceLight);
+        }
+      }
     }
-    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), new THREE.MeshStandardMaterial({ color: 0x080a0b, roughness: 1 }));
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), new THREE.MeshStandardMaterial({ color: 0x100e0d, roughness: 1 }));
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.set(0, 6.15, roomDepth / 2 - 2);
     scene.add(ceiling);
+    const ceilingGridMaterial = new THREE.MeshStandardMaterial({ color: 0x1b1715, roughness: 0.94, emissive: 0x0d0806, emissiveIntensity: 0.08 });
+    const ceilingCenterZ = roomDepth / 2 - 2;
+    for (let z = -roomDepth / 2 + 0.4; z < roomDepth / 2; z += 1.65) {
+      const crossbar = new THREE.Mesh(new THREE.BoxGeometry(roomWidth, 0.022, 0.035), ceilingGridMaterial);
+      crossbar.position.set(0, 6.125, ceilingCenterZ + z);
+      scene.add(crossbar);
+    }
+    for (let x = -roomWidth / 2 + 0.35; x < roomWidth / 2; x += 1.65) {
+      const runner = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.022, roomDepth), ceilingGridMaterial);
+      runner.position.set(x, 6.125, ceilingCenterZ);
+      scene.add(runner);
+    }
+    const downlightTrim = new THREE.MeshStandardMaterial({ color: 0x171411, roughness: 0.68, metalness: 0.22 });
+    const downlight = new THREE.MeshBasicMaterial({ color: 0xffd09a, toneMapped: false });
+    for (const z of [1.2, 3.7, 6.2, 8.7, 11.2]) {
+      for (const x of [-1.75, 1.75]) {
+        const trim = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.045, 20), downlightTrim);
+        trim.position.set(x, 6.085, z);
+        scene.add(trim);
+        const diffuser = new THREE.Mesh(new THREE.CircleGeometry(0.073, 20), downlight);
+        diffuser.rotation.x = Math.PI / 2;
+        diffuser.position.set(x, 6.058, z);
+        scene.add(diffuser);
+        if (z === 3.7) {
+          const ceilingLight = new THREE.PointLight(0xffba79, 2.8, 6.5, 2);
+          ceilingLight.position.set(x, 5.78, z);
+          scene.add(ceilingLight);
+        }
+      }
+    }
 
     const screenGroup = new THREE.Group();
     screenGroup.position.set(hall.screen.center.x, hall.screen.center.y, hall.screen.center.z);
@@ -181,16 +273,17 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     frame.position.z = -0.18;
     screenGroup.add(frame);
 
-    const velvet = new THREE.MeshPhysicalMaterial({ color: 0x871b25, emissive: 0x28050a, emissiveIntensity: 0.42, roughness: 0.88, metalness: 0, clearcoat: 0.12, clearcoatRoughness: 0.86 });
-    const backInset = new THREE.MeshPhysicalMaterial({ color: 0xa12732, emissive: 0x3a080e, emissiveIntensity: 0.62, roughness: 0.79, metalness: 0, clearcoat: 0.13, clearcoatRoughness: 0.74 });
-    const cushionMaterial = new THREE.MeshPhysicalMaterial({ color: 0xa22530, emissive: 0x2b050a, emissiveIntensity: 0.42, roughness: 0.82, metalness: 0, clearcoat: 0.12 });
+    const fabricTexture = createVelvetTexture(renderer);
+    const velvet = new THREE.MeshPhysicalMaterial({ color: 0xddd0cc, map: fabricTexture, roughness: 0.94, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
+    const backInset = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, roughness: 0.92, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.95 });
+    const cushionMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, roughness: 0.93, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
     const armMaterial = new THREE.MeshStandardMaterial({ color: 0x282324, roughness: 0.62, metalness: 0.12 });
     const supportMaterial = new THREE.MeshStandardMaterial({ color: 0x29292a, roughness: 0.52, metalness: 0.52 });
     const selectedBack = new THREE.MeshPhysicalMaterial({ color: 0x65d6a0, roughness: 0.72, emissive: 0x126342, emissiveIntensity: 0.45, clearcoat: 0.1 });
     const selectedCushion = new THREE.MeshPhysicalMaterial({ color: 0x79e4b0, roughness: 0.72, emissive: 0x176d47, emissiveIntensity: 0.4, clearcoat: 0.1 });
-    const chairBackGeometry = new RoundedBoxGeometry(0.66, 0.82, 0.21, 5, 0.15);
-    const chairInsetGeometry = new RoundedBoxGeometry(0.57, 0.7, 0.045, 5, 0.115);
-    const cushionGeometry = new RoundedBoxGeometry(0.62, 0.18, 0.53, 5, 0.08);
+    const chairBackGeometry = new RoundedBoxGeometry(0.72, 0.88, 0.24, 6, 0.19);
+    const chairInsetGeometry = new RoundedBoxGeometry(0.6, 0.74, 0.045, 6, 0.14);
+    const cushionGeometry = new RoundedBoxGeometry(0.66, 0.2, 0.57, 6, 0.095);
     const armGeometry = new RoundedBoxGeometry(0.105, 0.18, 0.51, 4, 0.047);
     const legGeometry = new THREE.CylinderGeometry(0.022, 0.03, 0.27, 8);
     const chairParts = new Map<string, { back: THREE.Mesh; cushion: THREE.Mesh }>();
@@ -302,7 +395,7 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     const state: SceneState = {
       renderer, scene, camera, screenCenter, finalTarget: screenCenter.clone(), mapPosition, mapTarget, mapUp, eye,
       selectedRing, chairParts, baseBack: backInset, baseCushion: cushionMaterial,
-      selectedBack, selectedCushion, texture, canvas: imageCanvas,
+      selectedBack, selectedCushion, texture, fabricTexture, canvas: imageCanvas,
       currentTarget: mapTarget.clone(), currentUp: mapUp.clone(), frame: 0,
       motionFrame: 0, alive: true,
     };
@@ -319,7 +412,7 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
       renderer.domElement.removeEventListener('pointerup', pointerUp);
       renderer.domElement.removeEventListener('pointercancel', pointerUp);
       image.onload = null; image.onerror = null;
-      renderer.dispose(); texture.dispose();
+      renderer.dispose(); texture.dispose(); fabricTexture.dispose();
       const geometries = new Set<THREE.BufferGeometry>();
       const materials = new Set<THREE.Material>();
       scene.traverse((object) => {
@@ -349,7 +442,7 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     const eye = eyePoint(seat);
     state.eye.set(eye.x, eye.y, eye.z);
     state.finalTarget.copy(state.screenCenter);
-    state.finalTarget.y = Math.max(eye.y - 0.2, state.screenCenter.y * 0.32);
+    state.finalTarget.y = Math.max(0.45, eye.y * 0.4);
   }, [seat, hall, hasSelection]);
 
   useEffect(() => {
