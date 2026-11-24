@@ -310,7 +310,7 @@ export default function App() {
     <div className="preview-heading"><div><p className="eyebrow">{hall.name} · {hall.format}</p><h1>View from your seat</h1><p>See the screen from {seat.row}{seat.number} before you book.</p></div><div className="preview-seat-stamp"><span>{seat.row}{seat.number}</span><small>YOUR VIEW</small></div></div>
     <div className="cinema-view"><CinemaPreview key={`${hall.id}-${seat.id}-${film.id}`} hall={hall} seat={seat} poster={film.image}/></div>
     <section className="viewpoints"><div className="viewpoints-title"><h2>Compare your view</h2><span>Two seats · same auditorium</span></div><div className="viewpoint-options">
-      {getViewpointSeats(hall, seats).map((option) => { const isActive = option.id === seat.id; const data = seatMeasurements(hall, option); return <button key={option.id} className={`viewpoint-card ${isActive ? 'is-active' : ''}`} onClick={() => setSeatId(option.id)} aria-pressed={isActive}>
+      {getViewpointSeats(hall, seats, occupied).map((option) => { const isActive = option.id === seat.id; const data = seatMeasurements(hall, option); return <button key={option.id} className={`viewpoint-card ${isActive ? 'is-active' : ''}`} onClick={() => setSeatId(option.id)} aria-pressed={isActive}>
         <span className="viewpoint-row">{option.row}{option.number}</span><span className="viewpoint-copy"><strong>{option.row === hall.rows[1]?.label ? 'Front-side view' : 'Central view · back row'}</strong><small>{data.distance.toFixed(1)} m to screen <i>·</i> {data.screenAngle.toFixed(0)}° view</small></span><span className="viewpoint-check">{isActive ? '✓' : '↗'}</span>
       </button>; })}
     </div></section>
@@ -327,11 +327,16 @@ export default function App() {
   return <div className="app-shell">{nav}{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{ticketScreen || (myTicketsRoute ? ticketList : previewRoute && show ? previewScreen : route === '#/book' ? bookScreen : homeScreen)}</div>;
 }
 
-function getViewpointSeats(hall: Hall, seats: Seat[]) {
+function getViewpointSeats(hall: Hall, seats: Seat[], occupied: string[]) {
   const frontLabel = hall.rows[1]?.label || hall.rows[0]?.label;
   const backLabel = hall.rows[hall.rows.length - 1]?.label;
-  const front = seats.filter((seat) => seat.row === frontLabel).sort((a, b) => Math.abs(b.position.x) - Math.abs(a.position.x))[0];
-  const back = seats.filter((seat) => seat.row === backLabel).sort((a, b) => Math.abs(a.position.x) - Math.abs(b.position.x))[0];
+  const availableInRow = (row: string) => {
+    const rowSeats = seats.filter((seat) => seat.row === row);
+    const available = rowSeats.filter((seat) => !occupied.includes(seat.id));
+    return available.length ? available : rowSeats;
+  };
+  const front = availableInRow(frontLabel).sort((a, b) => Math.abs(b.position.x) - Math.abs(a.position.x))[0];
+  const back = availableInRow(backLabel).sort((a, b) => Math.abs(a.position.x) - Math.abs(b.position.x))[0];
   return [front, back].filter((seat): seat is Seat => Boolean(seat));
 }
 
