@@ -65,9 +65,9 @@ function createVelvetTexture(renderer: THREE.WebGLRenderer) {
       const weave = (x % 4 === 0 || y % 4 === 0) ? -3 : 0;
       const shade = grain + weave + Math.sin((x + y * 0.7) * 0.12) * 2.2;
       const index = (y * canvas.width + x) * 4;
-      image.data[index] = Math.max(0, Math.min(255, 93 + shade));
-      image.data[index + 1] = Math.max(0, Math.min(255, 21 + shade * 0.42));
-      image.data[index + 2] = Math.max(0, Math.min(255, 28 + shade * 0.55));
+      image.data[index] = Math.max(0, Math.min(255, 118 + shade));
+      image.data[index + 1] = Math.max(0, Math.min(255, 27 + shade * 0.42));
+      image.data[index + 2] = Math.max(0, Math.min(255, 34 + shade * 0.55));
       image.data[index + 3] = 255;
     }
   }
@@ -140,8 +140,8 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     camera.position.copy(mapPosition);
     camera.lookAt(mapTarget);
 
-    scene.add(new THREE.HemisphereLight(0xc4b6a6, 0x080607, 0.28));
-    scene.add(new THREE.AmbientLight(0x4b3830, 0.25));
+    scene.add(new THREE.HemisphereLight(0xc4b6a6, 0x080607, 0.36));
+    scene.add(new THREE.AmbientLight(0x4b3830, 0.32));
     const screenGlow = new THREE.PointLight(0xffd9b4, 25, 22, 2);
     screenGlow.position.set(hall.screen.center.x, hall.screen.center.y + 0.35, hall.screen.center.z + 1.25);
     scene.add(screenGlow);
@@ -213,7 +213,7 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
       scene.add(runner);
     }
     const downlightTrim = new THREE.MeshStandardMaterial({ color: 0x171411, roughness: 0.68, metalness: 0.22 });
-    const downlight = new THREE.MeshBasicMaterial({ color: 0xffd09a, toneMapped: false });
+    const downlight = new THREE.MeshBasicMaterial({ color: 0xffdfad, toneMapped: false });
     for (const z of [1.2, 3.7, 6.2, 8.7, 11.2]) {
       for (const x of [-1.75, 1.75]) {
         const trim = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.045, 20), downlightTrim);
@@ -274,9 +274,9 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     screenGroup.add(frame);
 
     const fabricTexture = createVelvetTexture(renderer);
-    const velvet = new THREE.MeshPhysicalMaterial({ color: 0xddd0cc, map: fabricTexture, roughness: 0.94, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
-    const backInset = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, roughness: 0.92, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.95 });
-    const cushionMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, roughness: 0.93, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
+    const velvet = new THREE.MeshPhysicalMaterial({ color: 0xddd0cc, map: fabricTexture, emissive: 0x170307, emissiveIntensity: 0.24, roughness: 0.94, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
+    const backInset = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, emissive: 0x170307, emissiveIntensity: 0.24, roughness: 0.92, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.95 });
+    const cushionMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: fabricTexture, emissive: 0x170307, emissiveIntensity: 0.24, roughness: 0.93, metalness: 0, clearcoat: 0.025, clearcoatRoughness: 0.96 });
     const armMaterial = new THREE.MeshStandardMaterial({ color: 0x282324, roughness: 0.62, metalness: 0.12 });
     const supportMaterial = new THREE.MeshStandardMaterial({ color: 0x29292a, roughness: 0.52, metalness: 0.52 });
     const selectedBack = new THREE.MeshPhysicalMaterial({ color: 0x65d6a0, roughness: 0.72, emissive: 0x126342, emissiveIntensity: 0.45, clearcoat: 0.1 });
@@ -442,7 +442,10 @@ export function CinemaPreview({ hall, seat, poster, hasSelection, stage, onStage
     const eye = eyePoint(seat);
     state.eye.set(eye.x, eye.y, eye.z);
     state.finalTarget.copy(state.screenCenter);
-    state.finalTarget.y = Math.max(0.45, eye.y * 0.4);
+    const screenDistance = Math.hypot(state.screenCenter.x - eye.x, state.screenCenter.z - eye.z) || 1;
+    const screenTopElevation = Math.atan2(state.screenCenter.y + hall.screen.height / 2 - eye.y, screenDistance);
+    const desiredScreenTopElevation = Math.atan((0.5 - 0.24) * 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)));
+    state.finalTarget.y = eye.y + Math.tan(screenTopElevation - desiredScreenTopElevation) * screenDistance;
   }, [seat, hall, hasSelection]);
 
   useEffect(() => {
