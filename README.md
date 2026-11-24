@@ -1,74 +1,43 @@
 # Luma Cinema
 
-A responsive cinema booking demo built with React, TypeScript, Vite, Three.js, Express, and PostgreSQL. The static frontend works without an API using local browser storage. Configure the API to enable shared availability, server-side pricing, protected ticket reads, and race-safe booking persistence.
+**See the screen from your seat before you book.**
 
-All venue geometry in this repository is illustrative simulated data. Luma Standard 1 and Luma IMAX 1 are virtual demo halls, not real cinema claims. Units are meters; one Three.js unit equals one meter. The assumed seated-eye offset is 1.15 m above the seat position. See `config/auditoriums.json` before editing hall measurements.
+Luma Cinema is an interactive 3D cinema booking demo set in Ankara. Choose a movie and a showtime, pick a seat, and follow the camera from the overhead map down to eye level. You can compare the view from the front corner with one from the back row before deciding where to sit.
 
-## Local setup
+**[Try the live demo](https://faresfadly1.github.io/luma-cinema/) · [Explore the booking experience](https://faresfadly1.github.io/luma-cinema/#/book)**
 
-Requirements: Node.js 20+ and npm. PostgreSQL is optional for the visual/local demo and required for the API-backed booking path.
+## Try it in a minute
 
-```sh
-npm install
-npm run dev
-```
+1. Choose **Distant Sun** and select a **Standard** or **IMAX** showtime.
+2. Pick an available seat near the front and to one side. Press **Continue** to see the auditorium from that seat.
+3. Choose **Change seat** and try a central seat farther back. Watch how the screen takes up less of your field of view and how more rows appear in front of you.
+4. Book the seat you prefer. You can reopen your demo ticket under **My tickets**.
 
-Open the URL printed by Vite. Without `VITE_API_URL`, demo bookings stay in the browser's local storage and are not shared between visitors.
+The catalog includes three fictional films: *Distant Sun*, *Night Ferry*, and *Blue Hour*. Showtimes use Istanbul local time, prices are in Turkish lira, and bookings are free to try.
 
-## PostgreSQL-backed API
+## How the seat preview works
 
-Create a database and copy the environment template:
+The seat map, camera, and measurements all use the same [auditorium geometry](config/auditoriums.json). Each hall defines its screen dimensions and orientation, seat positions, and row elevations. When you select a seat, the camera moves to its calculated eye point. That same point determines the three measurements beneath the preview.
 
-```sh
-createdb luma_cinema
-cp .env.example .env
-```
+| **Measurement**              | **What it means**                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Distance to screen**       | The straight-line distance from your eye point to the center of the screen, in meters.                                                    |
+| **Horizontal viewing angle** | The angle between the left and right edges of the screen as seen from your seat. A larger angle means the screen fills more of your view. |
+| **Lateral offset**           | How far your seat sits to the left or right of the screen’s centerline, in meters.                                                        |
 
-Set `DATABASE_URL` in `.env`, then run migrations and seed data, and start the API:
+The Standard and IMAX demo halls have separate configurations. Both use **simulated dimensions**, with one 3D unit equal to one meter and an assumed eye height of 1.15 m above the seat position. Devices without WebGL can display a simplified perspective preview.
 
-```sh
-npm run db:migrate
-npm run db:seed
-npm run api:dev
-```
+## Booking modes
 
-The default API listens on port 8787. In another shell, set the API URL for Vite:
+| **Mode**            | **How it works**                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Browser demo**    | Bookings stay in local browser storage. You can reload the page and reopen your tickets in the same browser. |
+| **Shared bookings** | The optional Express API stores bookings in PostgreSQL and shares seat availability across visitors.         |
 
-```sh
-VITE_API_URL=http://localhost:8787 npm run dev
-```
+## Explore the code
 
-Seed data includes three fictional films, two virtual halls, and upcoming showtimes in Europe/Istanbul. Re-run the seed command to refresh the upcoming schedule. The visitor token is generated in the browser and sent in the `x-visitor-token` header. It is a demo ownership mechanism, not account authentication. Ticket reads only return records associated with that visitor token.
-
-The unique database constraint on `(showtime_id, seat_id)` is the final concurrency guard. Simultaneous requests for a seat can produce one success and one HTTP 409 conflict. Clients refresh availability after the conflict.
-
-## Geometry and preview
-
-`config/auditoriums.json` stores the hall dimensions and each row's explicit seat x positions, depth, and elevation. Rows can use custom measured seat coordinates through the optional `seats` list, with an independent x/y/z point and facing yaw for each seat. The map groups those individual positions and derives aisle gaps from their spacing, so curved rows, uneven spacing, varying elevations, and relocated aisles can be represented. The screen stores width, height, center, and yaw.
-
-All calculations use x (left/right), y (height), and z (depth). The screen faces the seats at z=0, and seat yaw 0 faces the screen along -z. The eye point adds the documented 1.15 m seated-eye offset. Distance is the 3D Euclidean distance from eye point to screen center. Screen angle uses the rays to both screen edges. Vertical angle describes the elevation to screen center; turn angle describes the horizontal turn from the seat's facing direction.
-
-To replace simulated data with a real hall, obtain a venue-approved survey or measurement set, record its source and date, and set `verified` only after validation. Update units, screen center/dimensions/orientation, every seat position/elevation/yaw, and the eye-offset assumption. Apply the same measurements to each seat map configuration and set the screen orientation once; the shared geometry drives the map, measurements, and Three.js view. Do not publish venue claims until the measurements are verified. The same model drives the 2D seat map, measurements, and Three.js view.
-
-## Commands
-
-```sh
-npm run build          # Type check and create dist/
-npm run test:geometry  # Geometry known-coordinate and symmetry checks
-npm run api:build      # Compile the Node API
-npm run preview        # Preview the production frontend build
-```
-
-## Deployment
-
-### GitHub Pages frontend
-
-The included Actions workflow builds `dist/` and deploys it to GitHub Pages on pushes to `main`. The Vite base path is configured as `/luma-cinema/` in Actions builds; change `vite.config.ts` if the repository name changes. The app uses hash routes so refreshes and direct ticket links work under a project path. In repository Settings → Pages, select GitHub Actions as the build and deployment source.
-
-### API and database
-
-Deploy `server/` to a Node.js host that supports persistent processes (for example, Render, Fly.io, or Railway) and provision hosted PostgreSQL. Set `DATABASE_URL`, `DATABASE_SSL` when required, `PORT`, and `ALLOWED_ORIGIN=https://faresfadly1.github.io` in the API host settings. Keep all database credentials server-side. Configure the Node host with build command `npm ci && npm run api:build` and start command `npm run api:start`. Run `npm run db:migrate:compiled` and `npm run db:seed:compiled` once against the hosted database. Set the GitHub Actions repository variable `VITE_API_URL` to the deployed HTTPS API origin; the Pages workflow passes it into the Vite build automatically. Then redeploy Pages. Keep database credentials only in the API host's environment; never place them in frontend variables or commit `.env`.
-
-## Accessibility and fallback
-
-Seat buttons expose row, seat number, and availability to assistive technology. Keyboard focus is visible. If WebGL cannot initialize, the booking map and geometry measurements remain usable, and the preview displays a clear unavailable message.
+- [Auditorium configuration](config/auditoriums.json) — screen dimensions, row elevations, and seat layouts.
+- [Seat geometry](src/geometry.ts) — calculations behind the distance, viewing angle, and offset.
+- [3D preview](src/CinemaPreview.tsx) — the auditorium scene and the camera transition from map to seat.
+- [Geometry tests](src/geometry.test.ts) — checks for known distances, mirrored seats, and screen orientation.
+- [Booking API](server/) — server-side booking and persistence.
