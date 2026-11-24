@@ -44,11 +44,11 @@ The unique database constraint on `(showtime_id, seat_id)` is the final concurre
 
 ## Geometry and preview
 
-`config/auditoriums.json` stores the hall dimensions and each row's explicit seat x positions, depth, and elevation. Seat positions can be replaced with custom measured coordinates; the TypeScript model keeps each seat as an individual point and yaw, so curved rows, spacing changes, and aisle locations can be represented. The screen stores width, height, center, and yaw.
+`config/auditoriums.json` stores the hall dimensions and each row's explicit seat x positions, depth, and elevation. Rows can use custom measured seat coordinates through the optional `seats` list, with an independent x/y/z point and facing yaw for each seat. The map groups those individual positions and derives aisle gaps from their spacing, so curved rows, uneven spacing, varying elevations, and relocated aisles can be represented. The screen stores width, height, center, and yaw.
 
 All calculations use x (left/right), y (height), and z (depth). The screen faces the seats at z=0, and seat yaw 0 faces the screen along -z. The eye point adds the documented 1.15 m seated-eye offset. Distance is the 3D Euclidean distance from eye point to screen center. Screen angle uses the rays to both screen edges. Vertical angle describes the elevation to screen center; turn angle describes the horizontal turn from the seat's facing direction.
 
-To replace simulated data with a real hall, obtain a venue-approved survey or measurement set, record its source and date, and set `verified` only after validation. Update units, screen center/dimensions/orientation, every seat position/elevation/yaw, and the eye-offset assumption. Do not publish venue claims until the measurements are verified. The same model drives the 2D seat map, measurements, and Three.js view.
+To replace simulated data with a real hall, obtain a venue-approved survey or measurement set, record its source and date, and set `verified` only after validation. Update units, screen center/dimensions/orientation, every seat position/elevation/yaw, and the eye-offset assumption. Apply the same measurements to each seat map configuration and set the screen orientation once; the shared geometry drives the map, measurements, and Three.js view. Do not publish venue claims until the measurements are verified. The same model drives the 2D seat map, measurements, and Three.js view.
 
 ## Commands
 
