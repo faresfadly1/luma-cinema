@@ -67,7 +67,7 @@ The included Actions workflow builds `dist/` and deploys it to GitHub Pages on p
 
 ### API and database
 
-Deploy `server/` to a Node.js host that supports persistent processes (for example, Render, Fly.io, or Railway) and provision hosted PostgreSQL. Set `DATABASE_URL`, `DATABASE_SSL` when required, and `PORT` in the host's secret environment settings. Run `npm run db:migrate` and `npm run db:seed` once against that database. Set the frontend build variable `VITE_API_URL` to the deployed API origin and redeploy Pages. Keep database credentials only in the API host's environment; never place them in frontend variables or commit `.env`.
+Deploy `server/` to a Node.js host that supports persistent processes (for example, Render, Fly.io, or Railway) and provision hosted PostgreSQL. Set `DATABASE_URL`, `DATABASE_SSL` when required, and `PORT` in the host's secret environment settings. Configure the Node host with build command `npm ci && npm run api:build` and start command `npm run api:start`. Run `npm run db:migrate:compiled` and `npm run db:seed:compiled` once against the hosted database. Set the frontend build variable `VITE_API_URL` to the deployed API origin and redeploy Pages. Keep database credentials only in the API host's environment; never place them in frontend variables or commit `.env`.
 
 ## Accessibility and fallback
 

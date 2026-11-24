@@ -1,4 +1,4 @@
-import auditoriumData from '../config/auditoriums.json';
+import auditoriumData from '../config/auditoriums.json' with { type: 'json' };
 export type Vec3 = { x:number; y:number; z:number };
 export type Seat = { id:string; row:string; number:number; position:Vec3; yawDegrees:number };
 type HallBase = typeof auditoriumData.halls.standard;
